@@ -1,10 +1,13 @@
-import tkinter as tk
-from tkinter import messagebox, ttk
 import sqlite3
 from datetime import datetime, timedelta
+
+import tkinter as tk
+from tkinter import messagebox, ttk
+
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.dates as mdates
+
 from tkcalendar import DateEntry
 
 DB_NAME = "streaks.db"
@@ -46,45 +49,34 @@ class StreakTrackerApp:
         # Check if streaks table exists
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='streaks'")
         if cursor.fetchone() is None:
-            # Table does not exist, create it
-            cursor.execute('''
-                CREATE TABLE streaks (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    date TEXT NOT NULL,
-                    module_id INTEGER NOT NULL,
-                    UNIQUE(date, module_id),
-                    FOREIGN KEY (module_id) REFERENCES modules(id) ON DELETE CASCADE
-                )
-            ''')
+            self._create_streaks_table(cursor)
             self.conn.commit()
         else:
-            # Table exists, check if module_id column exists
             cursor.execute("PRAGMA table_info(streaks)")
             columns = [info[1] for info in cursor.fetchall()]
             if 'module_id' not in columns:
-                # Need to migrate table to add module_id column
-                # Steps:
-                # 1. Rename old table
-                cursor.execute("ALTER TABLE streaks RENAME TO streaks_old")
-                # 2. Create new table with module_id column
-                cursor.execute('''
-                    CREATE TABLE streaks (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        date TEXT NOT NULL,
-                        module_id INTEGER NOT NULL,
-                        UNIQUE(date, module_id),
-                        FOREIGN KEY (module_id) REFERENCES modules(id) ON DELETE CASCADE
-                    )
-                ''')
-                # 3. Insert data from old table with default module_id = 1 (or NULL if allowed)
-                # First ensure module with id=1 exists or create a default module
-                cursor.execute("SELECT id FROM modules WHERE id=1")
-                if cursor.fetchone() is None:
-                    cursor.execute("INSERT INTO modules (id, name) VALUES (1, 'default')")
-                cursor.execute("INSERT INTO streaks (id, date, module_id) SELECT id, date, 1 FROM streaks_old")
-                # 4. Drop old table
-                cursor.execute("DROP TABLE streaks_old")
+                self._migrate_streaks_table(cursor)
                 self.conn.commit()
+
+    def _create_streaks_table(self, cursor):
+        cursor.execute('''
+            CREATE TABLE streaks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                module_id INTEGER NOT NULL,
+                UNIQUE(date, module_id),
+                FOREIGN KEY (module_id) REFERENCES modules(id) ON DELETE CASCADE
+            )
+        ''')
+
+    def _migrate_streaks_table(self, cursor):
+        cursor.execute("ALTER TABLE streaks RENAME TO streaks_old")
+        self._create_streaks_table(cursor)
+        cursor.execute("SELECT id FROM modules WHERE id=1")
+        if cursor.fetchone() is None:
+            cursor.execute("INSERT INTO modules (id, name) VALUES (1, 'default')")
+        cursor.execute("INSERT INTO streaks (id, date, module_id) SELECT id, date, 1 FROM streaks_old")
+        cursor.execute("DROP TABLE streaks_old")
 
     def create_widgets(self):
         main_frame = ttk.Frame(self.root)
@@ -98,8 +90,16 @@ class StreakTrackerApp:
         right_frame = ttk.Frame(main_frame)
         right_frame.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Module management frame
-        module_frame = ttk.Frame(right_frame)
+        self._create_module_management(right_frame)
+        self._create_single_date_entry(right_frame)
+        self._create_range_date_entry(right_frame)
+        self._create_streak_info_labels(right_frame)
+        self._create_dates_listbox(right_frame)
+        self._create_delete_range_entry(right_frame)
+        self._create_plot_area(left_frame)
+
+    def _create_module_management(self, parent):
+        module_frame = ttk.Frame(parent)
         module_frame.pack(pady=5, fill=tk.X)
         ttk.Label(module_frame, text="Modules:").grid(row=0, column=0, padx=5)
         self.module_listbox = tk.Listbox(module_frame, height=4)
@@ -112,12 +112,11 @@ class StreakTrackerApp:
         add_module_button.pack(pady=2)
         delete_module_button = ttk.Button(module_button_frame, text="-", width=3, command=self.delete_module, style='Prominent.TButton')
         delete_module_button.pack(pady=2)
-        
         rename_module_button = ttk.Button(module_button_frame, text="R", width=3, command=self.rename_module, style='Prominent.TButton')
         rename_module_button.pack(pady=2)
 
-        # Single date entry
-        single_date_frame = ttk.Frame(right_frame)
+    def _create_single_date_entry(self, parent):
+        single_date_frame = ttk.Frame(parent)
         single_date_frame.pack(pady=5, fill=tk.X)
         ttk.Label(single_date_frame, text="Streak Date (YYYY-MM-DD):").grid(row=0, column=0, padx=5)
         self.date_entry = DateEntry(single_date_frame, date_pattern='yyyy-MM-dd')
@@ -129,8 +128,8 @@ class StreakTrackerApp:
         delete_date_button = ttk.Button(single_date_frame, text="Delete Date", command=self.delete_date, style='Prominent.TButton')
         delete_date_button.grid(row=0, column=3, padx=5)
 
-        # Range date entry
-        range_date_frame = ttk.Frame(right_frame)
+    def _create_range_date_entry(self, parent):
+        range_date_frame = ttk.Frame(parent)
         range_date_frame.pack(pady=5, fill=tk.X)
         ttk.Label(range_date_frame, text="Add Date Range:").grid(row=0, column=0, padx=5)
         self.start_date_entry = DateEntry(range_date_frame, date_pattern='yyyy-MM-dd')
@@ -141,45 +140,35 @@ class StreakTrackerApp:
         add_range_button = ttk.Button(range_date_frame, text="Add Date Range", command=self.add_date_range, style='Prominent.TButton')
         add_range_button.grid(row=0, column=3, padx=5)
 
-        # Label to show number of streak breaks
-        self.breaks_label = ttk.Label(right_frame, text="Streak breaks: 0", font=("Arial", 12))
+    def _create_streak_info_labels(self, parent):
+        self.breaks_label = ttk.Label(parent, text="Streak breaks: 0", font=("Arial", 12))
         self.breaks_label.pack(pady=5)
-
-        # Label to show highest streak number
-        self.highest_streak_label = ttk.Label(right_frame, text="Highest streak: 0", font=("Arial", 12))
+        self.highest_streak_label = ttk.Label(parent, text="Highest streak: 0", font=("Arial", 12))
         self.highest_streak_label.pack(pady=5)
 
-        # Frame for listbox and delete button
-        list_frame = ttk.Frame(right_frame)
+    def _create_dates_listbox(self, parent):
+        list_frame = ttk.Frame(parent)
         list_frame.pack(pady=10, fill=tk.BOTH, expand=False)
 
-        # Listbox to show dates
         self.dates_listbox = tk.Listbox(list_frame, selectmode=tk.MULTIPLE, height=6)
         self.dates_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # Make dates_listbox read-only/unselectable by disabling selection events
         def ignore_event(event):
             return "break"
         self.dates_listbox.bind("<Button-1>", ignore_event)
         self.dates_listbox.bind("<B1-Motion>", ignore_event)
         self.dates_listbox.bind("<Key>", ignore_event)
 
-        # Remove previous handlers that interfere with selection preservation
-        # Instead, bind focus out and focus in on module_listbox to preserve selection
         self.module_listbox.bind("<FocusOut>", self.on_module_listbox_focus_out)
         self.module_listbox.bind("<FocusIn>", self.on_module_listbox_focus_in)
 
-        # Scrollbar for listbox
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL)
         scrollbar.config(command=self.dates_listbox.yview)
         scrollbar.pack(side=tk.LEFT, fill=tk.Y)
         self.dates_listbox.config(yscrollcommand=scrollbar.set)
 
-        # Delete button
-        # Removed the delete selected dates button as per user request
-
-        # Frame for delete range selection
-        delete_range_frame = ttk.Frame(right_frame)
+    def _create_delete_range_entry(self, parent):
+        delete_range_frame = ttk.Frame(parent)
         delete_range_frame.pack(pady=10, fill=tk.X)
 
         ttk.Label(delete_range_frame, text="Delete Date Range:").grid(row=0, column=0, padx=5)
@@ -191,6 +180,7 @@ class StreakTrackerApp:
         delete_range_button = ttk.Button(delete_range_frame, text="Delete Date Range", command=self.delete_date_range, style='Prominent.TButton')
         delete_range_button.grid(row=0, column=3, padx=5)
 
+    def _create_plot_area(self, parent):
         plt.style.use('ggplot')
         self.figure = plt.Figure(figsize=(6,4), dpi=100)
         self.ax = self.figure.add_subplot(111)
@@ -203,7 +193,7 @@ class StreakTrackerApp:
         self.ax.tick_params(axis='y', colors='#34495E')
         self.ax.grid(True, linestyle='--', alpha=0.5, color='#D5D8DC')
 
-        self.canvas = FigureCanvasTkAgg(self.figure, master=left_frame)
+        self.canvas = FigureCanvasTkAgg(self.figure, master=parent)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def add_date(self):
