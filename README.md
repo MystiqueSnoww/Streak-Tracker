@@ -6,9 +6,10 @@ This application allows you to track streaks for different modules with optional
 
 - Add, delete, and rename modules.
 - Add single dates or date ranges to streaks.
-- Add optional notes to each date (limited to 50 characters).
+- Add optional notes to each date (limited to 50 characters) with real-time input length enforcement.
 - Visualize streaks over time with highlights for highest streaks and breaks.
 - Delete date ranges from streaks.
+- Improved note input popup that truncates notes exceeding 50 characters as the user types without closing the input box or showing disruptive warnings.
 
 ## Screenshot
 
