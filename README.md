@@ -1,38 +1,39 @@
-# Streak Tracker Application
+# Streak Tracker
 
-This is a desktop application built with Python and Tkinter for tracking streaks of activities or habits. It allows users to manage multiple modules, add or delete streak dates individually or in ranges, and visualize streak progress over time with an interactive graph.
+This application allows you to track streaks for different modules with optional notes for each date.
 
 ## Features
 
-- Manage multiple modules to track different streaks separately.
-- Add or delete individual streak dates.
-- Add or delete ranges of streak dates.
-- Visualize streak progress over time with a matplotlib graph embedded in the GUI.
-- Highlights highest streaks and streak breaks.
-- Stores data persistently in an SQLite database (`streaks.db`).
+- Add, delete, and rename modules.
+- Add single dates or date ranges to streaks.
+- Add optional notes to each date (limited to 50 characters).
+- Visualize streaks over time with highlights for highest streaks and breaks.
+- Delete date ranges from streaks.
 
-## Technologies Used
+## Screenshot
 
-- Python 3
-- Tkinter for GUI
-- SQLite for data storage
-- Matplotlib for plotting streak graphs
-- tkcalendar for date selection widgets
-
-## Development Notes
-
-This project was an exploration of vibe coding with Blackbox AI, experimenting with interactive AI-assisted coding workflows. The entire program, including this README file, was written by Blackbox AI based on user prompts only. The development process involved multiple iterations to get the code working correctly, including fixing several errors along the way. Limitations of this tool include that rollback does not always work perfectly, and at times code editing can crash or be slow. Careful testing and validation were necessary during development.
-
-
+![Streak Tracker Screenshot](screenshot.PNG)
 
 ## Usage
 
-Run the `streak_tracker.py` script with Python 3 to launch the application:
+Run the `streak_tracker.py` script to launch the application.
 
-```bash
-python streak_tracker.py
+## Requirements
+
+- Python 3.x
+- tkinter
+- matplotlib
+- tkcalendar
+- sqlite3 (standard with Python)
+
+## Installation
+
+Install required packages using pip:
+
+```
+pip install matplotlib tkcalendar
 ```
 
 ## License
 
-This project is licensed under the terms specified in the LICENSE file.
+MIT License
