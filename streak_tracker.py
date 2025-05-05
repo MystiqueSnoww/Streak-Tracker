@@ -57,6 +57,9 @@ class StreakTrackerApp:
             if 'module_id' not in columns:
                 self._migrate_streaks_table(cursor)
                 self.conn.commit()
+            if 'note' not in columns:
+                cursor.execute("ALTER TABLE streaks ADD COLUMN note TEXT")
+                self.conn.commit()
 
     def _create_streaks_table(self, cursor):
         cursor.execute('''
@@ -64,6 +67,7 @@ class StreakTrackerApp:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
                 module_id INTEGER NOT NULL,
+                note TEXT,
                 UNIQUE(date, module_id),
                 FOREIGN KEY (module_id) REFERENCES modules(id) ON DELETE CASCADE
             )
@@ -75,7 +79,7 @@ class StreakTrackerApp:
         cursor.execute("SELECT id FROM modules WHERE id=1")
         if cursor.fetchone() is None:
             cursor.execute("INSERT INTO modules (id, name) VALUES (1, 'default')")
-        cursor.execute("INSERT INTO streaks (id, date, module_id) SELECT id, date, 1 FROM streaks_old")
+        cursor.execute("INSERT INTO streaks (id, date, module_id, note) SELECT id, date, 1, NULL FROM streaks_old")
         cursor.execute("DROP TABLE streaks_old")
 
     def create_widgets(self):
@@ -197,26 +201,48 @@ class StreakTrackerApp:
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def add_date(self):
+        print("add_date method called")
         date_str = self.date_entry.get()
+        print("date_str:", date_str)
+        note_text = self.prompt_note_popup()
+        print("note_text:", note_text)
+        if note_text is None:
+            print("note_text is None, returning")
+            return
+        if len(note_text) > 50:
+            messagebox.showwarning("Note Too Long", "Note must be 50 characters or less.")
+            return
         try:
             date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
             messagebox.showerror("Invalid Date", "Please enter a valid date in YYYY-MM-DD format.")
             return
-
+    
         module_id = self.get_selected_module_id()
         if module_id is None:
             messagebox.showwarning("No Module Selected", "Please select a module to add the date.")
             return
-
+    
         cursor = self.conn.cursor()
         try:
-            cursor.execute("INSERT INTO streaks (date, module_id) VALUES (?, ?)", (date_str, module_id))
+            cursor.execute("INSERT INTO streaks (date, module_id, note) VALUES (?, ?, ?)", (date_str, module_id, note_text if note_text else None))
             self.conn.commit()
             self.load_data()
             self.plot_streak()
         except sqlite3.IntegrityError:
-            messagebox.showwarning("Duplicate Date", "This date is already recorded for the selected module.")
+            # Date already exists, ask if user wants to update the note
+            update = messagebox.askyesno("Duplicate Date", "This date is already recorded for the selected module. Do you want to update the note?")
+            if update:
+                if len(note_text) > 50:
+                    messagebox.showwarning("Note Too Long", "Note must be 50 characters or less.")
+                    return
+                try:
+                    cursor.execute("UPDATE streaks SET note = ? WHERE date = ? AND module_id = ?", (note_text if note_text else None, date_str, module_id))
+                    self.conn.commit()
+                    self.load_data()
+                    self.plot_streak()
+                except Exception as e:
+                    messagebox.showerror("Database Error", f"An error occurred while updating the note: {e}")
         except Exception as e:
             messagebox.showerror("Database Error", f"An error occurred: {e}")
 
@@ -304,6 +330,37 @@ class StreakTrackerApp:
 
         messagebox.showinfo("Date Range Deleted", f"Deleted dates from {start_date_str} to {end_date_str}.")
 
+    def prompt_note_popup(self):
+        self.note_text = None
+
+        def on_text_change(event):
+            current_text = note_entry.get("1.0", "end-1c")
+            if len(current_text) > 50:
+                note_entry.delete("1.0", "end")
+                note_entry.insert("1.0", current_text[:50])
+                # Removed warning messagebox to avoid closing the popup and losing user input
+
+        def submit_note():
+            self.note_text = note_entry.get("1.0", "end-1c")
+            popup.destroy()
+        
+        popup = tk.Toplevel(self.root)
+        popup.title("Add Note")
+        
+        note_label = tk.Label(popup, text="Enter a note (optional):")
+        note_label.pack()
+        
+        note_entry = tk.Text(popup, height=5, width=40)
+        note_entry.pack()
+        note_entry.bind("<KeyRelease>", on_text_change)
+        
+        submit_button = tk.Button(popup, text="Submit", command=submit_note)
+        submit_button.pack()
+        
+        popup.wait_window()
+        
+        return self.note_text
+
     def plot_streak(self):
         self.ax.clear()
         self.ax.set_title("Streak Over Time", color="#2E4053", fontsize=14, fontweight='bold')
@@ -320,6 +377,10 @@ class StreakTrackerApp:
             self.highest_streak_label.config(text="Highest streak: 0")
             self.canvas.draw()
             return
+
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT date, note FROM streaks WHERE module_id = ? ORDER BY date", (self.get_selected_module_id(),))
+        notes_dict = {datetime.strptime(row[0], "%Y-%m-%d").date(): row[1] for row in cursor.fetchall()}
 
         streak_lengths = []
         max_streak = 0
@@ -376,7 +437,10 @@ class StreakTrackerApp:
             x, y = line.get_data()
             annot.xy = (x[ind["ind"][0]], y[ind["ind"][0]])
             date_str = self.dates[ind["ind"][0]].strftime('%Y-%m-%d')
+            note = notes_dict.get(self.dates[ind["ind"][0]])
             text = f"Date: {date_str}\nStreak: {y[ind['ind'][0]]}"
+            if note:
+                text += f"\nNote: {note}"
             annot.set_text(text)
             annot.get_bbox_patch().set_alpha(0.9)
 
